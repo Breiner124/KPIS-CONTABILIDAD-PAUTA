@@ -254,6 +254,24 @@ svg.donut .slice:hover{opacity:1}
 .donut-empty svg{width:30px; height:30px; opacity:.5; margin-bottom:8px}
 .donut-empty p{margin:0; font-size:13px}
 
+/* ---------- Tabla inversión y % por fecha ---------- */
+.bd-wrap{width:100%; overflow-x:auto; max-height:360px; overflow-y:auto}
+table.bd{border-collapse:collapse; width:100%; min-width:460px; font-size:13px}
+table.bd th{
+  position:sticky; top:0; z-index:1; background:var(--surface);
+  text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em;
+  color:var(--muted-solid); font-weight:600; padding:8px 12px; border-bottom:1px solid var(--border);
+}
+table.bd th.r,table.bd td.r{text-align:right}
+table.bd td{padding:8px 12px; border-bottom:1px solid var(--border); font-variant-numeric:tabular-nums}
+table.bd tbody tr:hover td{background:var(--surface-2)}
+table.bd .eqv{display:block; font-size:10.5px; color:var(--muted-solid); font-family:var(--font-mono); margin-top:1px}
+table.bd tfoot td{
+  position:sticky; bottom:0; background:var(--surface-2);
+  border-top:2px solid var(--border-strong); padding:9px 12px; font-weight:600; font-family:var(--font-mono);
+}
+table.bd tfoot td:first-child{font-family:var(--font-display); text-transform:uppercase; font-size:11px; letter-spacing:.04em; color:var(--muted-solid)}
+
 /* ---------- Productos (despachos / testeos) ---------- */
 .prod{border:1px solid var(--border); border-radius:var(--r-md); background:var(--surface); box-shadow:var(--shadow-sm); overflow:hidden}
 .prod + .prod{margin-top:12px}
@@ -683,7 +701,7 @@ function renderResumen(){
       <div class="kpi">
         <div class="k-top"><span class="k-label">Facturación</span><span class="k-ico">${IC.cart}</span></div>
         <div class="k-value">${fmtRevenue(g.facturado)}</div>
-        <div class="k-sub">Despachos ${fmtRevenue(g.despacho.facturado)} · Testeos ${fmtRevenue(g.testeos.facturado)}</div>
+        <div class="k-sub">${investCode()!==revenueCode()?`≈ ${fmtInvest(g.facturado)} en ${investCode()}`:`Despachos ${fmtRevenue(g.despacho.facturado)} · Testeos ${fmtRevenue(g.testeos.facturado)}`}</div>
       </div>
       <div class="kpi">
         <div class="k-top"><span class="k-label">Utilidad bruta aprox.</span><span class="k-ico">${IC.money}</span></div>
@@ -708,6 +726,11 @@ function renderResumen(){
       </div>
     </div>
 
+    <div class="card card-pad">
+      <div class="panel-title">Inversión y % por día <span class="hint">todos los productos juntos</span></div>
+      ${dateBreakdown(series)}
+    </div>
+
     <div class="dash-cols">
       ${sectionSummaryCard("Productos que se despachan","Stock propio · dropshipping", g.despacho, IC.cart)}
       ${sectionSummaryCard("Testeos","Productos que no se despachan", g.testeos, IC.pct)}
@@ -715,6 +738,46 @@ function renderResumen(){
 
     <p class="footnote">Los datos se guardan en este navegador. Exporta una copia desde Ajustes.</p>
   </div>`;
+}
+
+/* ---------- Tabla: inversión y % por fecha (todas las secciones) ---------- */
+function dateBreakdown(series){
+  const rows = series.filter(s=>s.spend>0 || s.fac>0);
+  const totSpend = series.reduce((a,s)=>a+s.spend,0);
+  const totFac   = series.reduce((a,s)=>a+s.fac,0);
+  const totPct   = totFac>0 ? totSpend/totFac*100 : null;
+  const sameCur  = investCode()===revenueCode();
+  const [y,mo]   = state.activeMonth.split("-").map(Number);
+  if(!rows.length){
+    return `<div class="empty" style="padding:26px">${IC.money}<p>Registra gasto o ventas para ver el detalle por día.</p></div>`;
+  }
+  const body = rows.map(s=>{
+    const st = statusOf(s.pct);
+    const fecha = `${String(s.day).padStart(2,"0")}/${String(mo).padStart(2,"0")}`;
+    // Equivalente en la moneda de inversión para dejar la conversión a la vista
+    const equiv = sameCur ? "" : `<span class="eqv">≈ ${fmtInvest(s.fac)}</span>`;
+    return `<tr>
+      <td class="day-cell">${fecha}<span class="dow">${DOW[new Date(y,mo-1,s.day).getDay()]}</span></td>
+      <td class="r"><span class="num">${fmtInvest(s.spend)}</span></td>
+      <td class="r"><span class="num">${s.fac>0?fmtRevenue(s.fac):"—"}</span>${equiv}</td>
+      <td class="r">${s.pct==null?`<span style="color:var(--muted)">—</span>`:chip(st, fmtPct(s.pct))}</td>
+    </tr>`;
+  }).join("");
+  return `<div class="bd-wrap"><table class="bd">
+    <thead><tr>
+      <th>Fecha</th>
+      <th class="r">Inversión <span class="cur-tag">${investCode()}</span></th>
+      <th class="r">Facturación <span class="cur-tag rev">${revenueCode()}</span></th>
+      <th class="r">% pauta</th>
+    </tr></thead>
+    <tbody>${body}</tbody>
+    <tfoot><tr>
+      <td>Total del mes</td>
+      <td class="r"><span class="num">${fmtInvest(totSpend)}</span></td>
+      <td class="r"><span class="num">${totFac>0?fmtRevenue(totFac):"—"}</span>${sameCur?"":`<span class="eqv">≈ ${fmtInvest(totFac)}</span>`}</td>
+      <td class="r">${totPct==null?"—":chip(statusOf(totPct), fmtPct(totPct))}</td>
+    </tr></tfoot>
+  </table></div>`;
 }
 
 /* ---------- Datos para las donas ---------- */
