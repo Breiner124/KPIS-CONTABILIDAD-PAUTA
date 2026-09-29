@@ -286,6 +286,8 @@ table.sheet thead th{
   padding:8px 12px; border-bottom:1px solid var(--border); text-align:right; z-index:1;
 }
 table.sheet thead th:first-child{text-align:left}
+.cur-tag{display:inline-block; margin-left:4px; font-family:var(--font-mono); font-size:9.5px; font-weight:600; letter-spacing:.02em; color:var(--accent); background:var(--accent-weak); padding:1px 5px; border-radius:5px; vertical-align:middle}
+.cur-tag.rev{color:var(--good); background:var(--good-bg)}
 table.sheet tbody td{border-bottom:1px solid var(--border)}
 table.sheet tbody tr:hover td{background:var(--surface-2)}
 .day-cell{padding:7px 12px; text-align:left; font-family:var(--font-mono); font-size:12px; color:var(--fg-soft); white-space:nowrap}
@@ -385,8 +387,12 @@ table.simple tfoot td:first-child{font-family:var(--font-display); text-transfor
         <input type="month" id="monthPick" value="2026-01">
       </div>
       <div class="ctl">
-        <label for="curPick">Moneda</label>
-        <select id="curPick"></select>
+        <label for="investPick">Inversión</label>
+        <select id="investPick" title="Moneda en la que registras la pauta"></select>
+      </div>
+      <div class="ctl">
+        <label for="revenuePick">Facturación</label>
+        <select id="revenuePick" title="Moneda en la que facturas en tu tienda"></select>
       </div>
       <button class="icon-btn" id="themeBtn" title="Cambiar tema" aria-label="Cambiar tema">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
@@ -413,8 +419,8 @@ const DOW = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
 
 function defaultState(){
   return {
-    base:"COP",
-    currency:"COP",
+    base:"COP",                 // moneda de referencia interna
+    roles:{ invest:"COP", revenue:"GTQ" }, // pauta en COP · facturación en GTQ
     currencies:{
       COP:{symbol:"$",  name:"Peso colombiano", rate:1,   decimals:0},
       GTQ:{symbol:"Q",  name:"Quetzal",         rate:520, decimals:2},
@@ -426,24 +432,26 @@ function defaultState(){
     months:{}
   };
 }
+// Datos de ejemplo (enero 2026). Los valores se guardan en base (COP);
+// la facturación se muestra en GTQ (base 520 COP = 1 Q).
 function seedMonth(){
-  // Datos de ejemplo (enero 2026) — bórralos con el botón en Ajustes.
+  const Q = 520; // 1 Q en COP, para escribir la facturación de ejemplo en quetzales
   return {
     despacho:[
       {id:uid(), name:"Reloj inteligente", example:true, days:{
-        1:{tiktok:50000,  facebook:30000, facturado:800000},
-        2:{tiktok:120000, facebook:80000, facturado:900000},
-        3:{tiktok:60000,  facebook:40000, facturado:1100000},
+        1:{tiktok:30000, facebook:20000, facturado:1000*Q}, // 50.000 COP / 1.000 Q → 9,6%
+        2:{tiktok:90000, facebook:40000, facturado:1000*Q}, // 130.000 COP / 1.000 Q → 25%
+        3:{tiktok:30000, facebook:20000, facturado:1500*Q}, // 50.000 COP / 1.500 Q → 6,4%
       }},
       {id:uid(), name:"Set de organizadores", example:true, days:{
-        1:{tiktok:35000, facebook:0,     facturado:250000},
-        2:{tiktok:45000, facebook:20000, facturado:300000},
+        1:{tiktok:30000, facebook:0,     facturado:500*Q},  // 30.000 COP / 500 Q → 11,5%
+        2:{tiktok:40000, facebook:20000, facturado:600*Q},  // 60.000 COP / 600 Q → 19,2%
       }},
     ],
     testeos:[
       {id:uid(), name:"Testeo · Audífonos TWS", example:true, days:{
         1:{tiktok:40000, facebook:0, facturado:0},
-        2:{tiktok:38000, facebook:15000, facturado:120000},
+        2:{tiktok:38000, facebook:15000, facturado:300*Q},
       }},
       {id:uid(), name:"Testeo · Lámpara LED", example:true, days:{
         1:{tiktok:25000, facebook:25000, facturado:0},
@@ -463,10 +471,19 @@ function load(){
 }
 function migrate(s){
   const d = defaultState();
-  s.base ||= d.base; s.currency ||= d.currency;
+  s.base ||= d.base;
   s.currencies ||= d.currencies; s.thresholds ||= d.thresholds;
   s.theme ||= "system"; s.months ||= {};
   s.activeMonth ||= d.activeMonth;
+  // Roles de moneda (nuevo modelo). Deriva de una versión anterior si hace falta.
+  if(!s.roles){
+    const inv = s.currency || s.base || "COP";
+    const rev = s.currencies["GTQ"] ? "GTQ" : inv;
+    s.roles = { invest:inv, revenue:rev };
+  }
+  if(!s.currencies[s.roles.invest]) s.roles.invest = s.base;
+  if(!s.currencies[s.roles.revenue]) s.roles.revenue = s.base;
+  delete s.currency;
   return s;
 }
 function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){} }
@@ -486,26 +503,35 @@ function dowFor(day){
   return DOW[new Date(y, mo-1, day).getDay()];
 }
 
-/* ---------- Conversión + formato de dinero ---------- */
-function cur(){ return state.currencies[state.currency]; }
-function toActive(base){ return base / (cur().rate||1); }
-function toBase(active){ return active * (cur().rate||1); }
-function fmtMoney(base, withSymbol=true){
-  const c = cur(); const v = toActive(base||0);
+/* ---------- Conversión + formato de dinero (dos monedas por rol) ----------
+   Todo el dinero se guarda internamente en la MONEDA BASE (COP).
+   · La inversión/pauta se captura y muestra en la "moneda de inversión".
+   · La facturación se captura y muestra en la "moneda de facturación".
+   Como el % de pauta es un cociente, ambos montos se convierten a la misma
+   base antes de dividir, así que el porcentaje es exacto sea cual sea la moneda. */
+function curOf(code){ return state.currencies[code] || {symbol:"$", rate:1, decimals:0, name:code}; }
+function rateOf(code){ return curOf(code).rate || 1; }
+function investCode(){ return state.roles.invest; }
+function revenueCode(){ return state.roles.revenue; }
+
+function fmtIn(code, base, withSymbol=true){
+  const c = curOf(code); const v = (base||0)/(c.rate||1);
   const n = v.toLocaleString("es-CO",{minimumFractionDigits:c.decimals, maximumFractionDigits:c.decimals});
   return withSymbol ? `${c.symbol} ${n}` : n;
 }
-function fmtInput(base){
-  // valor plano para el input editable (moneda activa), vacío si es 0
+function fmtInvest(base, s=true){ return fmtIn(investCode(), base, s); }
+function fmtRevenue(base, s=true){ return fmtIn(revenueCode(), base, s); }
+
+function fmtInputIn(code, base){
   if(!base) return "";
-  const c = cur(); const v = toActive(base);
+  const c = curOf(code); const v = base/(c.rate||1);
   return c.decimals ? String(Math.round(v*100)/100) : String(Math.round(v));
 }
-function parseInput(str){
+function parseIn(code, str){
   if(str==null) return 0;
   const clean = String(str).replace(/[^0-9.,-]/g,"").replace(/\.(?=\d{3}(\D|$))/g,"").replace(",",".");
   const n = parseFloat(clean);
-  return isNaN(n) ? 0 : Math.max(0, toBase(n));
+  return isNaN(n) ? 0 : Math.max(0, n*rateOf(code));
 }
 function fmtPct(p){ return (p==null||!isFinite(p)) ? "—" : p.toFixed(1).replace(".",",")+"%"; }
 
@@ -627,7 +653,7 @@ function renderResumen(){
   const g = grandTotals();
   const st = statusOf(g.pct);
   const series = dailySeries();
-  const c = cur();
+  const invN = curOf(investCode()).name, revN = curOf(revenueCode()).name;
   const monthLabel = new Date(state.activeMonth+"-01T00:00").toLocaleDateString("es-CO",{month:"long",year:"numeric"});
 
   view.innerHTML = `
@@ -636,7 +662,7 @@ function renderResumen(){
       <div>
         <div class="eyebrow">Panel del mes</div>
         <h2 style="text-transform:capitalize">${monthLabel}</h2>
-        <p>Porcentaje de pauta = gasto en TikTok + Meta dividido por lo facturado. Verde ≤ ${state.thresholds.green}% · Amarillo ≤ ${state.thresholds.yellow}% · Rojo > ${state.thresholds.yellow}%. Cifras en ${c.name} (${state.currency}).</p>
+        <p>Porcentaje de pauta = gasto en TikTok + Meta dividido por lo facturado. Verde ≤ ${state.thresholds.green}% · Amarillo ≤ ${state.thresholds.yellow}% · Rojo > ${state.thresholds.yellow}%. Inversión en ${invN} (${investCode()}) · facturación en ${revN} (${revenueCode()}); la conversión y el % son automáticos.</p>
       </div>
     </div>
 
@@ -647,22 +673,22 @@ function renderResumen(){
           ${chip(st, STATUS_LABEL[st])}
         </div>
         <div class="k-value">${fmtPct(g.pct)}</div>
-        <div class="k-sub">${fmtMoney(g.spend)} en pauta sobre ${fmtMoney(g.facturado)} facturado</div>
+        <div class="k-sub">${fmtInvest(g.spend)} en pauta sobre ${fmtRevenue(g.facturado)} facturado</div>
       </div>
       <div class="kpi">
         <div class="k-top"><span class="k-label">Inversión total del mes</span><span class="k-ico">${IC.wallet}</span></div>
-        <div class="k-value">${fmtMoney(g.spend)}</div>
-        <div class="k-sub">TikTok ${fmtMoney(g.tiktok)} · Meta ${fmtMoney(g.facebook)}</div>
+        <div class="k-value">${fmtInvest(g.spend)}</div>
+        <div class="k-sub">TikTok ${fmtInvest(g.tiktok)} · Meta ${fmtInvest(g.facebook)}</div>
       </div>
       <div class="kpi">
         <div class="k-top"><span class="k-label">Facturación</span><span class="k-ico">${IC.cart}</span></div>
-        <div class="k-value">${fmtMoney(g.facturado)}</div>
-        <div class="k-sub">Despachos ${fmtMoney(g.despacho.facturado)} · Testeos ${fmtMoney(g.testeos.facturado)}</div>
+        <div class="k-value">${fmtRevenue(g.facturado)}</div>
+        <div class="k-sub">Despachos ${fmtRevenue(g.despacho.facturado)} · Testeos ${fmtRevenue(g.testeos.facturado)}</div>
       </div>
       <div class="kpi">
         <div class="k-top"><span class="k-label">Utilidad bruta aprox.</span><span class="k-ico">${IC.money}</span></div>
-        <div class="k-value">${fmtMoney(g.facturado - g.spend)}</div>
-        <div class="k-sub">Facturado menos pauta</div>
+        <div class="k-value">${fmtInvest(g.facturado - g.spend)}</div>
+        <div class="k-sub">Facturado menos pauta, en ${investCode()}</div>
       </div>
     </div>
 
@@ -674,11 +700,11 @@ function renderResumen(){
     <div class="dash-cols">
       <div class="card card-pad">
         <div class="panel-title">Gasto por plataforma <span class="hint">¿dónde se gasta más?</span></div>
-        ${donutPanel(platformSlices(g), fmtMoney(g.spend), "en pauta")}
+        ${donutPanel(platformSlices(g), fmtInvest(g.spend), "en pauta")}
       </div>
       <div class="card card-pad">
         <div class="panel-title">Gasto por producto <span class="hint">mayor consumo de pauta</span></div>
-        ${donutPanel(productSlices(), fmtMoney(g.spend), "en pauta")}
+        ${donutPanel(productSlices(), fmtInvest(g.spend), "en pauta")}
       </div>
     </div>
 
@@ -728,10 +754,10 @@ function sectionSummaryCard(title, sub, t, icon){
         <div style="margin-top:6px">${chip(st, STATUS_LABEL[st])}</div>
       </div>
       <div style="display:grid;gap:7px;font-size:12.5px;min-width:150px">
-        <div style="display:flex;justify-content:space-between;gap:14px"><span style="color:var(--muted-solid)">Pauta</span><b class="num">${fmtMoney(t.spend)}</b></div>
-        <div style="display:flex;justify-content:space-between;gap:14px"><span style="color:var(--muted-solid)">Facturado</span><b class="num">${fmtMoney(t.facturado)}</b></div>
-        <div style="display:flex;justify-content:space-between;gap:14px"><span style="color:var(--muted-solid)">TikTok</span><b class="num">${fmtMoney(t.tiktok)}</b></div>
-        <div style="display:flex;justify-content:space-between;gap:14px"><span style="color:var(--muted-solid)">Meta</span><b class="num">${fmtMoney(t.facebook)}</b></div>
+        <div style="display:flex;justify-content:space-between;gap:14px"><span style="color:var(--muted-solid)">Pauta</span><b class="num">${fmtInvest(t.spend)}</b></div>
+        <div style="display:flex;justify-content:space-between;gap:14px"><span style="color:var(--muted-solid)">Facturado</span><b class="num">${fmtRevenue(t.facturado)}</b></div>
+        <div style="display:flex;justify-content:space-between;gap:14px"><span style="color:var(--muted-solid)">TikTok</span><b class="num">${fmtInvest(t.tiktok)}</b></div>
+        <div style="display:flex;justify-content:space-between;gap:14px"><span style="color:var(--muted-solid)">Meta</span><b class="num">${fmtInvest(t.facebook)}</b></div>
       </div>
     </div>
   </div>`;
@@ -766,10 +792,10 @@ function donutPanel(slices, centerVal, centerSub){
   </svg>`;
   const legend = slices.map(d=>{
     const pct = (d.value/total*100);
-    return `<div class="dn-row" data-label="${escapeHtml(d.label)}" title="${escapeHtml(d.label)} · ${fmtMoney(d.value)}">
+    return `<div class="dn-row" data-label="${escapeHtml(d.label)}" title="${escapeHtml(d.label)} · ${fmtInvest(d.value)}">
       <span class="dn-sw" style="background:${d.color}"></span>
       <span class="dn-name">${escapeHtml(d.label)}</span>
-      <span class="dn-amt"><b class="num">${fmtMoney(d.value)}</b><span class="dn-pct num">${pct.toFixed(0)}%</span></span>
+      <span class="dn-amt"><b class="num">${fmtInvest(d.value)}</b><span class="dn-pct num">${pct.toFixed(0)}%</span></span>
     </div>`;
   }).join("");
   return `<div class="donut-wrap"><div class="donut-svg">${svg}</div><div class="dn-legend">${legend}</div></div>`;
@@ -888,10 +914,10 @@ function renderProducts(kind){
       <div class="kpi k-hero status-${st}">
         <div class="k-top"><span class="k-label">% de pauta de la sección</span>${chip(st,STATUS_LABEL[st])}</div>
         <div class="k-value">${fmtPct(totals.pct)}</div>
-        <div class="k-sub">${fmtMoney(totals.spend)} en pauta · ${fmtMoney(totals.facturado)} facturado</div>
+        <div class="k-sub">${fmtInvest(totals.spend)} en pauta · ${fmtRevenue(totals.facturado)} facturado</div>
       </div>
-      <div class="kpi"><div class="k-top"><span class="k-label">TikTok</span><span class="k-ico">${IC.tiktok}</span></div><div class="k-value">${fmtMoney(totals.tiktok)}</div></div>
-      <div class="kpi"><div class="k-top"><span class="k-label">Meta</span><span class="k-ico">${IC.meta}</span></div><div class="k-value">${fmtMoney(totals.facebook)}</div></div>
+      <div class="kpi"><div class="k-top"><span class="k-label">TikTok</span><span class="k-ico">${IC.tiktok}</span></div><div class="k-value">${fmtInvest(totals.tiktok)}</div></div>
+      <div class="kpi"><div class="k-top"><span class="k-label">Meta</span><span class="k-ico">${IC.meta}</span></div><div class="k-value">${fmtInvest(totals.facebook)}</div></div>
       <div class="kpi"><div class="k-top"><span class="k-label">Productos</span><span class="k-ico">${IC.cart}</span></div><div class="k-value">${list.length}</div></div>
     </div>
 
@@ -919,8 +945,8 @@ function productCard(kind, p, idx){
       </div>
       <div class="prod-stats">
         ${p.example?`<span class="example-tag">Ejemplo</span>`:""}
-        <div class="prod-stat hide-sm"><div class="ps-label">Pauta</div><div class="ps-val">${fmtMoney(t.spend)}</div></div>
-        <div class="prod-stat hide-sm"><div class="ps-label">Facturado</div><div class="ps-val">${fmtMoney(t.facturado)}</div></div>
+        <div class="prod-stat hide-sm"><div class="ps-label">Pauta</div><div class="ps-val">${fmtInvest(t.spend)}</div></div>
+        <div class="prod-stat hide-sm"><div class="ps-label">Facturado</div><div class="ps-val">${fmtRevenue(t.facturado)}</div></div>
         <div class="prod-stat"><div class="ps-label">% pauta</div><div class="ps-val">${chip(st, fmtPct(t.pct))}</div></div>
       </div>
     </summary>
@@ -945,22 +971,23 @@ function dailySheet(p){
     const st = statusOf(pct);
     rows += `<tr data-day="${day}">
       <td class="day-cell">${day}<span class="dow">${dowFor(day)}</span></td>
-      <td><input class="cell" inputmode="decimal" data-f="tiktok" data-id="${p.id}" data-day="${day}" value="${fmtInput(d.tiktok)}" placeholder="0"></td>
-      <td><input class="cell" inputmode="decimal" data-f="facebook" data-id="${p.id}" data-day="${day}" value="${fmtInput(d.facebook)}" placeholder="0"></td>
-      <td><input class="cell" inputmode="decimal" data-f="facturado" data-id="${p.id}" data-day="${day}" value="${fmtInput(d.facturado)}" placeholder="0"></td>
+      <td><input class="cell" inputmode="decimal" data-f="tiktok" data-id="${p.id}" data-day="${day}" value="${fmtInputIn(investCode(),d.tiktok)}" placeholder="0"></td>
+      <td><input class="cell" inputmode="decimal" data-f="facebook" data-id="${p.id}" data-day="${day}" value="${fmtInputIn(investCode(),d.facebook)}" placeholder="0"></td>
+      <td><input class="cell" inputmode="decimal" data-f="facturado" data-id="${p.id}" data-day="${day}" value="${fmtInputIn(revenueCode(),d.facturado)}" placeholder="0"></td>
       <td class="pct-cell" data-pctcell="${day}">${pct==null?`<span style="color:var(--muted)">—</span>`:chip(st,fmtPct(pct))}</td>
     </tr>`;
   }
+  const invC = investCode(), revC = revenueCode();
   return `<div class="sheet-wrap"><table class="sheet">
     <thead><tr>
-      <th>Día</th><th>TikTok</th><th>Meta / FB</th><th>Facturado</th><th>% pauta</th>
+      <th>Día</th><th>TikTok <span class="cur-tag">${invC}</span></th><th>Meta / FB <span class="cur-tag">${invC}</span></th><th>Facturado <span class="cur-tag rev">${revC}</span></th><th>% pauta</th>
     </tr></thead>
     <tbody>${rows}</tbody>
     <tfoot><tr data-foot="${p.id}">
       <td>Total</td>
-      <td data-foot-f="tiktok">${fmtMoney(t.tiktok)}</td>
-      <td data-foot-f="facebook">${fmtMoney(t.facebook)}</td>
-      <td data-foot-f="facturado">${fmtMoney(t.facturado)}</td>
+      <td data-foot-f="tiktok">${fmtInvest(t.tiktok)}</td>
+      <td data-foot-f="facebook">${fmtInvest(t.facebook)}</td>
+      <td data-foot-f="facturado">${fmtRevenue(t.facturado)}</td>
       <td data-foot-f="pct">${chip(statusOf(t.pct), fmtPct(t.pct))}</td>
     </tr></tfoot>
   </table></div>`;
@@ -982,12 +1009,26 @@ function renderAjustes(){
     </div>
 
     <div class="card card-pad">
-        <div class="panel-title">Monedas y tasas</div>
+        <div class="panel-title">Monedas por rol</div>
         <p class="desc" style="margin-top:-6px;color:var(--muted-solid);font-size:12px">
-          Todo se guarda en la moneda base. La tasa es cuántas unidades de la base equivale 1 unidad de esa moneda (p. ej. 1 Q ≈ 520 COP).
+          Registras la <b>inversión/pauta</b> en una moneda y la <b>facturación</b> en otra. La conversión usa las tasas de abajo y el % de pauta se calcula sobre la misma base, así que es exacto.
+        </p>
+        <div class="set-grid" style="gap:12px;margin-top:6px">
+          <div class="field" style="margin:0">
+            <label for="investSel">Moneda de inversión (pauta)</label>
+            <select id="investSel">${Object.entries(state.currencies).map(([k,c])=>`<option value="${k}" ${k===state.roles.invest?"selected":""}>${k} · ${c.name}</option>`).join("")}</select>
+          </div>
+          <div class="field" style="margin:0">
+            <label for="revenueSel">Moneda de facturación</label>
+            <select id="revenueSel">${Object.entries(state.currencies).map(([k,c])=>`<option value="${k}" ${k===state.roles.revenue?"selected":""}>${k} · ${c.name}</option>`).join("")}</select>
+          </div>
+        </div>
+        <div class="panel-title" style="margin-top:18px">Tasas de cambio</div>
+        <p class="desc" style="margin-top:-6px;color:var(--muted-solid);font-size:12px">
+          La tasa indica a cuántos <b>${state.base}</b> equivale 1 unidad de esa moneda (p. ej. 1 Q = 520 COP).
         </p>
         <div style="overflow-x:auto"><table class="cur-table">
-          <thead><tr><th>Código</th><th>Nombre</th><th>Símbolo</th><th class="r">Tasa → base</th><th>Dec.</th></tr></thead>
+          <thead><tr><th>Código</th><th>Nombre</th><th>Símbolo</th><th class="r">1 = ? ${state.base}</th><th>Dec.</th></tr></thead>
           <tbody>
           ${Object.entries(state.currencies).map(([code,c])=>`<tr>
             <td style="font-family:var(--font-mono);font-weight:600">${code}${code===state.base?`<span class="badge-base">BASE</span>`:""}</td>
@@ -1000,10 +1041,6 @@ function renderAjustes(){
         </table></div>
         <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
           <button class="btn btn-sm" id="addCur">${IC.plus} Añadir moneda</button>
-          <div class="field" style="margin:0;flex:1;min-width:150px">
-            <label for="baseSel" style="font-size:11px">Moneda base</label>
-            <select id="baseSel">${Object.keys(state.currencies).map(k=>`<option value="${k}" ${k===state.base?"selected":""}>${k}</option>`).join("")}</select>
-          </div>
         </div>
     </div>
 
@@ -1048,7 +1085,8 @@ function renderAjustes(){
 
   // listeners ajustes
   el("addCur").addEventListener("click", addCurrency);
-  el("baseSel").addEventListener("change", e=>{ state.base = e.target.value; if(state.currencies[state.base]) state.currencies[state.base].rate = 1; save(); render(); rebuildCurPicker(); });
+  el("investSel").addEventListener("change", e=>{ state.roles.invest = e.target.value; save(); rebuildCurPicker(); renderAjustes(); });
+  el("revenueSel").addEventListener("change", e=>{ state.roles.revenue = e.target.value; save(); rebuildCurPicker(); renderAjustes(); });
   el("thGreen").addEventListener("change", e=>{ state.thresholds.green = clampNum(e.target.value,0); enforceThresholds(); save(); renderAjustes(); });
   el("thYellow").addEventListener("change", e=>{ state.thresholds.yellow = clampNum(e.target.value,0); enforceThresholds(); save(); renderAjustes(); });
   el("expBtn").addEventListener("click", exportData);
@@ -1105,7 +1143,6 @@ function importData(e){
       const s = JSON.parse(rd.result);
       if(!s.months) throw 0;
       state = migrate(s);
-      if(!state.currencies[state.currency]) state.currency = state.base;
       save(); rebuildCurPicker();
       el("monthPick").value = state.activeMonth;
       render();
@@ -1128,7 +1165,8 @@ view.addEventListener("input", e=>{
     const kind = t.closest(".prod").dataset.kind;
     const p = monthData()[kind].find(x=>x.id===id); if(!p) return;
     p.days[day] ||= {};
-    p.days[day][f] = parseInput(t.value);
+    // TikTok/Meta se capturan en la moneda de inversión; Facturado en la de facturación
+    p.days[day][f] = parseIn(f==="facturado" ? revenueCode() : investCode(), t.value);
     updateSheetRow(p, +day, t.closest(".prod"));
     save();
   }
@@ -1158,9 +1196,9 @@ function updateSheetRow(p, day, prodEl){
   const t = prodTotals(p);
   const foot = prodEl.querySelector(`[data-foot="${p.id}"]`);
   if(foot){
-    foot.querySelector('[data-foot-f="tiktok"]').textContent = fmtMoney(t.tiktok);
-    foot.querySelector('[data-foot-f="facebook"]').textContent = fmtMoney(t.facebook);
-    foot.querySelector('[data-foot-f="facturado"]').textContent = fmtMoney(t.facturado);
+    foot.querySelector('[data-foot-f="tiktok"]').textContent = fmtInvest(t.tiktok);
+    foot.querySelector('[data-foot-f="facebook"]').textContent = fmtInvest(t.facebook);
+    foot.querySelector('[data-foot-f="facturado"]').textContent = fmtRevenue(t.facturado);
     foot.querySelector('[data-foot-f="pct"]').innerHTML = chip(statusOf(t.pct), fmtPct(t.pct));
   }
   // cabecera del producto
@@ -1168,8 +1206,8 @@ function updateSheetRow(p, day, prodEl){
   if(stats){
     const vals = stats.querySelectorAll(".ps-val");
     if(vals.length>=3){
-      vals[0].textContent = fmtMoney(t.spend);
-      vals[1].textContent = fmtMoney(t.facturado);
+      vals[0].textContent = fmtInvest(t.spend);
+      vals[1].textContent = fmtRevenue(t.facturado);
       vals[2].innerHTML = chip(statusOf(t.pct), fmtPct(t.pct));
     }
   }
@@ -1199,13 +1237,13 @@ view.addEventListener("mouseover", e=>{
   const pt = e.target.closest(".pt");
   if(pt){
     const day = pt.dataset.day, pct = pt.dataset.pct.replace(".",",");
-    const spend = fmtMoney(+pt.dataset.spend), fac = fmtMoney(+pt.dataset.fac);
+    const spend = fmtInvest(+pt.dataset.spend), fac = fmtRevenue(+pt.dataset.fac);
     tt.innerHTML = `<b>Día ${day}</b> · ${pct}%<br>${spend} / ${fac}`;
     tt.style.opacity = "1"; return;
   }
   const sl = e.target.closest(".slice");
   if(sl){
-    tt.innerHTML = `<b>${sl.dataset.label}</b><br>${fmtMoney(+sl.dataset.val)} · ${sl.dataset.pct.replace(".",",")}%`;
+    tt.innerHTML = `<b>${sl.dataset.label}</b><br>${fmtInvest(+sl.dataset.val)} · ${sl.dataset.pct.replace(".",",")}%`;
     tt.style.opacity = "1";
     highlightLegend(sl.closest(".donut-wrap"), sl.dataset.label, true);
   }
@@ -1229,10 +1267,13 @@ function highlightLegend(wrap, label, on){
    Controles globales
    ============================================================ */
 function rebuildCurPicker(){
-  el("curPick").innerHTML = Object.entries(state.currencies)
-    .map(([k,c])=>`<option value="${k}" ${k===state.currency?"selected":""}>${k} · ${c.symbol}</option>`).join("");
+  const opts = sel => Object.entries(state.currencies)
+    .map(([k,c])=>`<option value="${k}" ${k===sel?"selected":""}>${k} · ${c.symbol}</option>`).join("");
+  el("investPick").innerHTML  = opts(state.roles.invest);
+  el("revenuePick").innerHTML = opts(state.roles.revenue);
 }
-el("curPick").addEventListener("change", e=>{ state.currency = e.target.value; save(); render(); });
+el("investPick").addEventListener("change", e=>{ state.roles.invest = e.target.value; save(); render(); });
+el("revenuePick").addEventListener("change", e=>{ state.roles.revenue = e.target.value; save(); render(); });
 el("monthPick").addEventListener("change", e=>{
   state.activeMonth = e.target.value || state.activeMonth;
   save(); render();
@@ -1260,7 +1301,8 @@ el("themeBtn").addEventListener("click", ()=>{
 function boot(){
   applyTheme();
   el("monthPick").value = state.activeMonth;
-  if(!state.currencies[state.currency]) state.currency = state.base;
+  if(!state.currencies[state.roles.invest]) state.roles.invest = state.base;
+  if(!state.currencies[state.roles.revenue]) state.roles.revenue = state.base;
   rebuildCurPicker();
   render();
 }
