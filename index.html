@@ -190,6 +190,20 @@ main{max-width:var(--maxw); margin:0 auto; padding:20px 16px 64px}
 .kpi.k-hero.status-warn{background:var(--warn-bg); border-color:var(--warn-line)}
 .kpi.k-hero.status-bad{background:var(--bad-bg); border-color:var(--bad-line)}
 .kpi.k-hero .k-value{font-size:34px}
+/* Indicador inteligente (métrica seleccionable) */
+.kpi-smart.status-good{background:var(--good-bg); border-color:var(--good-line)}
+.kpi-smart.status-bad{background:var(--bad-bg); border-color:var(--bad-line)}
+.kpi-smart.status-warn{background:var(--warn-bg); border-color:var(--warn-line)}
+.smart-sel{
+  appearance:none; border:1px solid var(--border); background:var(--surface-2); color:var(--fg-soft);
+  font-family:var(--font-display); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.03em;
+  border-radius:6px; padding:3px 22px 3px 8px; cursor:pointer; max-width:calc(100% - 38px); outline:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23697386' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 6px center;
+}
+.kpi-smart.status-good .smart-sel,.kpi-smart.status-bad .smart-sel,.kpi-smart.status-warn .smart-sel{background-color:var(--surface)}
+.smart-sel:hover{border-color:var(--border-strong); color:var(--fg)}
+.smart-sel:focus{border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-weak)}
 
 /* Chip de estado (verde/amarillo/rojo) */
 .chip{
@@ -446,6 +460,7 @@ function defaultState(){
     },
     thresholds:{green:19, yellow:20}, // pct<=green→verde · pct<=yellow→amarillo · resto→rojo
     theme:"system",
+    smartMetric:"roas",  // métrica del indicador inteligente del dashboard
     activeMonth:"2026-01",
     months:{}
   };
@@ -492,6 +507,7 @@ function migrate(s){
   s.base ||= d.base;
   s.currencies ||= d.currencies; s.thresholds ||= d.thresholds;
   s.theme ||= "system"; s.months ||= {};
+  s.smartMetric ||= "roas";
   s.activeMonth ||= d.activeMonth;
   // Roles de moneda (nuevo modelo). Deriva de una versión anterior si hace falta.
   if(!s.roles){
@@ -653,6 +669,7 @@ const IC = {
   tiktok:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 3c.3 2.1 1.6 3.7 3.5 4v2.6c-1.3 0-2.6-.4-3.6-1.1v5.8a5.7 5.7 0 1 1-5.7-5.7c.3 0 .6 0 .9.1v2.7a3 3 0 1 0 2.1 2.9V3h2.8Z"/></svg>',
   meta:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7.2 5C4.4 5 2.5 8 2.5 11.6c0 2.7 1.3 4.4 3.2 4.4 1.5 0 2.5-1 4-3.6l.9-1.7c.2.4.5.9.8 1.5l1 1.8c1.6 2.6 2.6 3.5 4.2 3.5 2 0 3.2-1.8 3.2-4.6C19.8 8.2 17.8 5 15 5c-1.5 0-2.7 1-4 3.2C9.9 6 8.7 5 7.2 5Zm.2 2.3c.8 0 1.6.8 2.6 2.5l-.8 1.4C8 13.6 7.5 14.1 6.8 14.1c-.8 0-1.3-.9-1.3-2.4 0-2.5 1-4.4 1.9-4.4Zm9.2 0c.9 0 1.9 1.8 1.9 4.3 0 1.6-.5 2.5-1.3 2.5-.7 0-1.2-.5-2.4-2.6l-.9-1.6c1-1.8 1.9-2.6 2.7-2.6Z"/></svg>',
   block:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="5.6" y1="5.6" x2="18.4" y2="18.4"/></svg>',
+  spark:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>',
   plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
   trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>',
   caret:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>',
@@ -703,11 +720,7 @@ function renderResumen(){
         <div class="k-value">${fmtRevenue(g.facturado)}</div>
         <div class="k-sub">${investCode()!==revenueCode()?`≈ ${fmtInvest(g.facturado)} en ${investCode()}`:`Despachos ${fmtRevenue(g.despacho.facturado)} · Testeos ${fmtRevenue(g.testeos.facturado)}`}</div>
       </div>
-      <div class="kpi">
-        <div class="k-top"><span class="k-label">Utilidad bruta aprox.</span><span class="k-ico">${IC.money}</span></div>
-        <div class="k-value">${fmtInvest(g.facturado - g.spend)}</div>
-        <div class="k-sub">Facturado menos pauta, en ${investCode()}</div>
-      </div>
+      ${smartCard(g, series)}
     </div>
 
     <div class="card card-pad">
@@ -737,6 +750,69 @@ function renderResumen(){
     </div>
 
     <p class="footnote">Los datos se guardan en este navegador. Exporta una copia desde Ajustes.</p>
+  </div>`;
+
+  el("smartSel")?.addEventListener("change", e=>{ state.smartMetric = e.target.value; save(); renderResumen(); });
+}
+
+/* ---------- Indicador inteligente (métrica seleccionable) ---------- */
+const SMART_METRICS = [
+  {id:"roas",  label:"Retorno (ROAS)"},
+  {id:"techo", label:"Margen en verde"},
+  {id:"proy",  label:"Proyección del mes"},
+  {id:"dias",  label:"Días por semáforo"},
+];
+function smartCard(g, series){
+  const metric = state.smartMetric || "roas";
+  const N = daysInMonth();
+  const activeDays = series.filter(s=>s.spend>0).length;
+  let value="—", sub="", tone="", ico=IC.spark;
+
+  if(metric==="roas"){
+    ico = IC.money;
+    if(g.spend>0){
+      const roas = g.facturado/g.spend;
+      value = roas.toLocaleString("es-CO",{minimumFractionDigits:1, maximumFractionDigits:2})+"×";
+      sub = `Por cada ${curOf(investCode()).symbol} 1 de pauta recuperas ${roas.toLocaleString("es-CO",{maximumFractionDigits:1})}× en ventas.`;
+      tone = statusOf(g.pct)==="good" ? "good" : statusOf(g.pct)==="bad" ? "bad" : "";
+    } else sub = "Registra pauta para calcular el retorno.";
+  }
+  else if(metric==="techo"){
+    ico = IC.wallet;
+    if(g.facturado>0){
+      const allowed = g.facturado * state.thresholds.green/100;
+      const rem = allowed - g.spend;
+      value = fmtInvest(Math.abs(rem));
+      if(rem>=0){ tone="good"; sub = `Puedes invertir esto más y mantenerte en ≤ ${state.thresholds.green}% (verde).`; }
+      else { tone="bad"; sub = `Te pasaste del ${state.thresholds.green}% por este monto. Reduce pauta o sube ventas.`; }
+    } else sub = "Registra facturación para ver tu margen de pauta.";
+  }
+  else if(metric==="proy"){
+    ico = IC.wallet;
+    if(activeDays>0){
+      const projSpend = g.spend/activeDays*N;
+      value = fmtInvest(projSpend);
+      sub = `Inversión estimada al cierre según tu ritmo (${activeDays} día${activeDays!==1?"s":""} con pauta de ${N}).`;
+      tone = statusOf(g.pct);
+      if(tone==="none") tone="";
+    } else sub = "Aún no hay días con pauta para proyectar.";
+  }
+  else if(metric==="dias"){
+    ico = IC.pct;
+    let ver=0,ama=0,roj=0,con=0;
+    series.forEach(s=>{ if(s.fac<=0) return; con++; const st=statusOf(s.pct); if(st==="good")ver++; else if(st==="warn")ama++; else roj++; });
+    if(con>0){ value = `${ver} / ${con}`; sub = `Días en verde. ${ver} óptimo · ${ama} alerta · ${roj} crítico.`; tone = roj>ver?"bad":ver>=con? "good":""; }
+    else { value="—"; sub="Sin días con facturación todavía."; }
+  }
+
+  const opts = SMART_METRICS.map(m=>`<option value="${m.id}" ${m.id===metric?"selected":""}>${m.label}</option>`).join("");
+  return `<div class="kpi kpi-smart ${tone?("status-"+tone):""}">
+    <div class="k-top">
+      <select id="smartSel" class="smart-sel" aria-label="Elegir indicador">${opts}</select>
+      <span class="k-ico">${ico}</span>
+    </div>
+    <div class="k-value">${value}</div>
+    <div class="k-sub">${sub}</div>
   </div>`;
 }
 
