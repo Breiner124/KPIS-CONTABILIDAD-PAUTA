@@ -203,7 +203,7 @@ main{max-width:var(--maxw); margin:0 auto; padding:20px 16px 64px}
 .chip.status-none{background:var(--surface-3); color:var(--muted-solid)} .chip.status-none .dot{background:var(--muted-solid)}
 
 /* ---------- Bloques del dashboard ---------- */
-.dash-cols{display:grid; grid-template-columns:1.5fr 1fr; gap:14px}
+.dash-cols{display:grid; grid-template-columns:1fr 1fr; gap:14px}
 @media (max-width:820px){.dash-cols{grid-template-columns:1fr}}
 .panel-title{font-size:13.5px; font-weight:600; font-family:var(--font-display); display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:14px}
 .panel-title .hint{font-size:11.5px; color:var(--muted-solid); font-weight:500; font-family:var(--font-body)}
@@ -230,6 +230,29 @@ svg.chart{display:block; width:100%; height:auto; min-width:520px}
 .legend{display:flex; gap:14px; flex-wrap:wrap; margin-top:10px; font-size:11.5px; color:var(--fg-soft)}
 .legend i{display:inline-flex;align-items:center;gap:6px}
 .legend .sw{width:11px;height:11px;border-radius:3px;display:inline-block}
+
+/* ---------- Donas (pastel) ---------- */
+.donut-wrap{display:flex; align-items:center; gap:20px}
+.donut-svg{flex:none}
+svg.donut{width:150px; height:150px; display:block}
+@media (max-width:560px){ .donut-wrap{flex-direction:column; align-items:stretch} .donut-svg{align-self:center} }
+svg.donut .slice{cursor:pointer; transition:opacity .12s}
+svg.donut:hover .slice{opacity:.45}
+svg.donut .slice:hover{opacity:1}
+.donut text.dn-val{font-family:var(--font-mono); font-weight:600; font-size:15px; fill:var(--fg)}
+.donut text.dn-sub{font-family:var(--font-body); font-size:8.5px; fill:var(--muted-solid); letter-spacing:.03em; text-transform:uppercase}
+.dn-legend{flex:1; min-width:170px; display:flex; flex-direction:column; gap:2px}
+.dn-row{display:grid; grid-template-columns:12px minmax(0,1fr) auto; align-items:center; gap:9px; padding:5px 7px; border-radius:7px; font-size:12.5px}
+.dn-row.hot{background:var(--surface-2)}
+.dn-sw{width:11px; height:11px; border-radius:3px}
+.dn-name{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; display:flex; align-items:center; gap:6px}
+.dn-kind{font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; color:var(--muted-solid); background:var(--surface-3); padding:1px 5px; border-radius:5px; flex:none}
+.dn-amt{display:flex; align-items:baseline; gap:8px; justify-content:flex-end; white-space:nowrap}
+.dn-amt b{font-weight:600}
+.dn-pct{color:var(--muted-solid); min-width:30px; text-align:right; font-size:11.5px}
+.donut-empty{text-align:center; padding:26px 10px; color:var(--muted-solid)}
+.donut-empty svg{width:30px; height:30px; opacity:.5; margin-bottom:8px}
+.donut-empty p{margin:0; font-size:13px}
 
 /* ---------- Productos (despachos / testeos) ---------- */
 .prod{border:1px solid var(--border); border-radius:var(--r-md); background:var(--surface); box-shadow:var(--shadow-sm); overflow:hidden}
@@ -422,11 +445,10 @@ function seedMonth(){
         1:{tiktok:40000, facebook:0, facturado:0},
         2:{tiktok:38000, facebook:15000, facturado:120000},
       }},
+      {id:uid(), name:"Testeo · Lámpara LED", example:true, days:{
+        1:{tiktok:25000, facebook:25000, facturado:0},
+      }},
     ],
-    bloqueos:[
-      {id:uid(), plataforma:"IP proxy", presupuesto:30000, inversion:30000, nota:"Cuenta bloqueada", example:true},
-      {id:uid(), plataforma:"IP proxy", presupuesto:30000, inversion:0, nota:"Reemplazo", example:true},
-    ]
   };
 }
 let state = load();
@@ -512,21 +534,25 @@ function sectionTotals(list){
   const spend=tk+fb;
   return {tiktok:tk, facebook:fb, spend, facturado:fac, pct: fac>0? spend/fac*100 : null};
 }
-function bloqueoTotal(){
-  return monthData().bloqueos.reduce((s,b)=>s+(+b.inversion||0),0);
-}
 function grandTotals(){
   const m = monthData();
   const d = sectionTotals(m.despacho);
   const t = sectionTotals(m.testeos);
-  const blk = bloqueoTotal();
   const tiktok = d.tiktok + t.tiktok;
   const facebook = d.facebook + t.facebook;
-  const spend = tiktok + facebook;           // gasto publicitario
-  const inversion = spend + blk;             // inversión total (incluye bloqueos)
+  const spend = tiktok + facebook;           // gasto publicitario = inversión total
   const facturado = d.facturado + t.facturado;
-  return {despacho:d, testeos:t, bloqueos:blk, tiktok, facebook, spend, inversion, facturado,
+  return {despacho:d, testeos:t, tiktok, facebook, spend, inversion:spend, facturado,
           pct: facturado>0 ? spend/facturado*100 : null};
+}
+// Gasto de pauta por producto (todas las secciones), ordenado de mayor a menor
+function spendByProduct(){
+  const m = monthData();
+  const rows = [];
+  m.despacho.forEach(p=>{ const t=prodTotals(p); if(t.spend>0) rows.push({name:p.name||"Sin nombre", value:t.spend, kind:"Despacho"}); });
+  m.testeos.forEach(p=>{ const t=prodTotals(p); if(t.spend>0) rows.push({name:p.name||"Sin nombre", value:t.spend, kind:"Testeo"}); });
+  rows.sort((a,b)=>b.value-a.value);
+  return rows;
 }
 // Serie diaria de % (gasto pauta / facturado por día, todas las secciones)
 function dailySeries(){
@@ -549,7 +575,6 @@ const TABS = [
   {id:"resumen",  label:"Resumen"},
   {id:"despacho", label:"Despachos"},
   {id:"testeos",  label:"Testeos"},
-  {id:"bloqueos", label:"Bloqueos"},
   {id:"ajustes",  label:"Ajustes"},
 ];
 let activeTab = "resumen";
@@ -558,7 +583,7 @@ const view = el("view");
 
 function renderTabs(){
   const m = monthData();
-  const counts = {despacho:m.despacho.length, testeos:m.testeos.length, bloqueos:m.bloqueos.length};
+  const counts = {despacho:m.despacho.length, testeos:m.testeos.length};
   el("tabs").innerHTML = TABS.map(t=>{
     const c = counts[t.id];
     return `<button class="tab" role="tab" data-tab="${t.id}" aria-selected="${t.id===activeTab}">
@@ -571,7 +596,6 @@ function render(){
   if(activeTab==="resumen") renderResumen();
   else if(activeTab==="despacho") renderProducts("despacho");
   else if(activeTab==="testeos") renderProducts("testeos");
-  else if(activeTab==="bloqueos") renderBloqueos();
   else if(activeTab==="ajustes") renderAjustes();
   view.scrollTop = 0;
 }
@@ -626,9 +650,9 @@ function renderResumen(){
         <div class="k-sub">${fmtMoney(g.spend)} en pauta sobre ${fmtMoney(g.facturado)} facturado</div>
       </div>
       <div class="kpi">
-        <div class="k-top"><span class="k-label">Inversión total</span><span class="k-ico">${IC.wallet}</span></div>
-        <div class="k-value">${fmtMoney(g.inversion)}</div>
-        <div class="k-sub">Pauta ${fmtMoney(g.spend)} + bloqueos ${fmtMoney(g.bloqueos)}</div>
+        <div class="k-top"><span class="k-label">Inversión total del mes</span><span class="k-ico">${IC.wallet}</span></div>
+        <div class="k-value">${fmtMoney(g.spend)}</div>
+        <div class="k-sub">TikTok ${fmtMoney(g.tiktok)} · Meta ${fmtMoney(g.facebook)}</div>
       </div>
       <div class="kpi">
         <div class="k-top"><span class="k-label">Facturación</span><span class="k-ico">${IC.cart}</span></div>
@@ -636,20 +660,25 @@ function renderResumen(){
         <div class="k-sub">Despachos ${fmtMoney(g.despacho.facturado)} · Testeos ${fmtMoney(g.testeos.facturado)}</div>
       </div>
       <div class="kpi">
-        <div class="k-top"><span class="k-label">Gasto en pauta</span><span class="k-ico">${IC.money}</span></div>
-        <div class="k-value">${fmtMoney(g.spend)}</div>
-        <div class="k-sub">TikTok ${fmtMoney(g.tiktok)} · Meta ${fmtMoney(g.facebook)}</div>
+        <div class="k-top"><span class="k-label">Utilidad bruta aprox.</span><span class="k-ico">${IC.money}</span></div>
+        <div class="k-value">${fmtMoney(g.facturado - g.spend)}</div>
+        <div class="k-sub">Facturado menos pauta</div>
       </div>
+    </div>
+
+    <div class="card card-pad">
+      <div class="panel-title">% de pauta por día <span class="hint">${monthLabel}</span></div>
+      ${chartDaily(series)}
     </div>
 
     <div class="dash-cols">
       <div class="card card-pad">
-        <div class="panel-title">% de pauta por día <span class="hint">${monthLabel}</span></div>
-        ${chartDaily(series)}
+        <div class="panel-title">Gasto por plataforma <span class="hint">¿dónde se gasta más?</span></div>
+        ${donutPanel(platformSlices(g), fmtMoney(g.spend), "en pauta")}
       </div>
       <div class="card card-pad">
-        <div class="panel-title">Inversión por plataforma</div>
-        ${platformBars(g)}
+        <div class="panel-title">Gasto por producto <span class="hint">mayor consumo de pauta</span></div>
+        ${donutPanel(productSlices(), fmtMoney(g.spend), "en pauta")}
       </div>
     </div>
 
@@ -660,6 +689,33 @@ function renderResumen(){
 
     <p class="footnote">Los datos se guardan en este navegador. Exporta una copia desde Ajustes.</p>
   </div>`;
+}
+
+/* ---------- Datos para las donas ---------- */
+// Paleta categórica validada (daltónico-segura) — claro / oscuro
+const CAT_LIGHT = ["#2a78d6","#eb6834","#1baf7a","#eda100","#e87ba4","#008300","#4a3aa7","#e34948"];
+const CAT_DARK  = ["#3987e5","#d95926","#199e70","#c98500","#d55181","#008300","#9085e9","#e66767"];
+function catColor(i){
+  const dark = document.documentElement.getAttribute("data-theme")==="dark" ||
+    (!document.documentElement.getAttribute("data-theme") && window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches);
+  const pal = dark ? CAT_DARK : CAT_LIGHT;
+  return pal[i % pal.length];
+}
+function platformSlices(g){
+  return [
+    {label:"Meta Ads",   value:g.facebook, color:catColor(0)},
+    {label:"TikTok Ads", value:g.tiktok,   color:catColor(1)},
+  ].filter(s=>s.value>0);
+}
+function productSlices(){
+  const rows = spendByProduct();
+  const MAX = 6;
+  let slices = rows.slice(0,MAX).map((r,i)=>({label:r.name, value:r.value, color:catColor(i), kind:r.kind}));
+  if(rows.length>MAX){
+    const otros = rows.slice(MAX).reduce((s,r)=>s+r.value,0);
+    slices.push({label:`Otros (${rows.length-MAX})`, value:otros, color:"var(--muted-solid)"});
+  }
+  return slices;
 }
 
 function sectionSummaryCard(title, sub, t, icon){
@@ -681,28 +737,50 @@ function sectionSummaryCard(title, sub, t, icon){
   </div>`;
 }
 
-function platformBars(g){
-  const rows = [
-    {k:"tiktok", label:"TikTok Ads", val:g.tiktok, cls:"tiktok", ico:IC.tiktok, color:"#111"},
-    {k:"meta",   label:"Meta Ads",   val:g.facebook, cls:"meta", ico:IC.meta, color:"#0866ff"},
-    {k:"block",  label:"Perdido por bloqueo", val:g.bloqueos, cls:"block", ico:IC.block, color:"var(--muted-solid)"},
-  ];
-  const max = Math.max(1, ...rows.map(r=>r.val));
-  const total = g.inversion || 1;
-  return rows.map(r=>{
-    const pctShare = (r.val/total*100);
-    const w = Math.max(r.val>0?4:0, r.val/max*100);
-    const barColor = r.cls==="tiktok" ? "linear-gradient(90deg,#25252f,#000)"
-                   : r.cls==="meta" ? "linear-gradient(90deg,#0866ff,#3b82f6)"
-                   : "var(--border-strong)";
-    return `<div class="pf-row">
-      <div class="pf-ico ${r.cls}">${r.ico}</div>
-      <div class="pf-main">
-        <div class="pf-top"><b>${r.label}</b><span class="pf-val">${fmtMoney(r.val)} <span style="color:var(--muted-solid);font-weight:500">· ${pctShare.toFixed(0)}%</span></span></div>
-        <div class="pf-bar"><span style="width:${w}%;background:${barColor}"></span></div>
-      </div>
+/* ---------- Gráfico de dona (pastel) ---------- */
+function donutPanel(slices, centerVal, centerSub){
+  const total = slices.reduce((s,d)=>s+d.value,0);
+  if(!total){
+    return `<div class="donut-empty">${IC.pct}<p>Sin gasto de pauta registrado todavía.</p></div>`;
+  }
+  const cx=90, cy=90, R=80, r=50;
+  const TAU = Math.PI*2;
+  let a0 = -Math.PI/2; // arranca arriba
+  let arcs = "";
+  slices.forEach(d=>{
+    const frac = d.value/total;
+    let a1 = a0 + frac*TAU;
+    if(slices.length===1){ // un solo segmento → anillo completo
+      arcs += `<circle cx="${cx}" cy="${cy}" r="${(R+r)/2}" fill="none" stroke="${d.color}" stroke-width="${R-r}"
+        class="slice" data-label="${escapeHtml(d.label)}" data-val="${d.value}" data-pct="100"/>`;
+    } else {
+      arcs += `<path class="slice" d="${arcPath(cx,cy,R,r,a0,a1)}" fill="${d.color}" stroke="var(--surface)" stroke-width="2"
+        data-label="${escapeHtml(d.label)}" data-val="${d.value}" data-pct="${(frac*100).toFixed(1)}"/>`;
+    }
+    a0 = a1;
+  });
+  const svg = `<svg class="donut" viewBox="0 0 180 180" role="img" aria-label="Distribución de gasto">
+    ${arcs}
+    <text x="${cx}" y="${cy-4}" text-anchor="middle" class="dn-val">${centerVal}</text>
+    <text x="${cx}" y="${cy+13}" text-anchor="middle" class="dn-sub">${centerSub}</text>
+  </svg>`;
+  const legend = slices.map(d=>{
+    const pct = (d.value/total*100);
+    return `<div class="dn-row" data-label="${escapeHtml(d.label)}" title="${escapeHtml(d.label)} · ${fmtMoney(d.value)}">
+      <span class="dn-sw" style="background:${d.color}"></span>
+      <span class="dn-name">${escapeHtml(d.label)}</span>
+      <span class="dn-amt"><b class="num">${fmtMoney(d.value)}</b><span class="dn-pct num">${pct.toFixed(0)}%</span></span>
     </div>`;
   }).join("");
+  return `<div class="donut-wrap"><div class="donut-svg">${svg}</div><div class="dn-legend">${legend}</div></div>`;
+}
+function arcPath(cx,cy,R,r,a0,a1){
+  const large = (a1-a0) > Math.PI ? 1 : 0;
+  const x0=cx+R*Math.cos(a0), y0=cy+R*Math.sin(a0);
+  const x1=cx+R*Math.cos(a1), y1=cy+R*Math.sin(a1);
+  const xi1=cx+r*Math.cos(a1), yi1=cy+r*Math.sin(a1);
+  const xi0=cx+r*Math.cos(a0), yi0=cy+r*Math.sin(a0);
+  return `M ${x0} ${y0} A ${R} ${R} 0 ${large} 1 ${x1} ${y1} L ${xi1} ${yi1} A ${r} ${r} 0 ${large} 0 ${xi0} ${yi0} Z`;
 }
 
 /* ---------- Chart diario de % de pauta ---------- */
@@ -889,51 +967,6 @@ function dailySheet(p){
 }
 
 /* ============================================================
-   Vista: Bloqueos (perdido por bloqueo)
-   ============================================================ */
-function renderBloqueos(){
-  const m = monthData();
-  const list = m.bloqueos;
-  const totPres = list.reduce((s,b)=>s+(+b.presupuesto||0),0);
-  const totInv = list.reduce((s,b)=>s+(+b.inversion||0),0);
-
-  view.innerHTML = `
-  <div class="section">
-    <div class="section-head">
-      <div>
-        <div class="eyebrow">Perdido por bloqueo</div>
-        <h2>Costos por bloqueo</h2>
-        <p>Presupuesto perdido y reinversión cuando una cuenta o IP se bloquea (proxies, reemplazos, etc.). La inversión suma a la inversión total del mes.</p>
-      </div>
-      <button class="btn btn-primary" id="addBlk">${IC.plus} Añadir fila</button>
-    </div>
-
-    <div class="kpi-grid">
-      <div class="kpi"><div class="k-top"><span class="k-label">Presupuesto perdido</span><span class="k-ico">${IC.block}</span></div><div class="k-value">${fmtMoney(totPres)}</div></div>
-      <div class="kpi"><div class="k-top"><span class="k-label">Inversión por bloqueo</span><span class="k-ico">${IC.wallet}</span></div><div class="k-value">${fmtMoney(totInv)}</div></div>
-      <div class="kpi"><div class="k-top"><span class="k-label">Casos</span><span class="k-ico">${IC.pct}</span></div><div class="k-value">${list.length}</div></div>
-    </div>
-
-    <div class="card" style="overflow-x:auto">
-      ${list.length ? `<table class="simple">
-        <thead><tr><th>ID / caso</th><th>Plataforma</th><th class="r">Presupuesto</th><th class="r">Inversión</th><th></th></tr></thead>
-        <tbody>${list.map(b=>`<tr data-id="${b.id}">
-          <td><input data-bf="nota" data-id="${b.id}" value="${escapeHtml(b.nota||"")}" placeholder="Motivo / referencia"></td>
-          <td><input data-bf="plataforma" data-id="${b.id}" value="${escapeHtml(b.plataforma||"")}" placeholder="p. ej. IP proxy"></td>
-          <td class="r"><input inputmode="decimal" data-bf="presupuesto" data-id="${b.id}" value="${fmtInput(b.presupuesto)}" placeholder="0"></td>
-          <td class="r"><input inputmode="decimal" data-bf="inversion" data-id="${b.id}" value="${fmtInput(b.inversion)}" placeholder="0"></td>
-          <td style="width:40px"><button class="row-del" data-delblk="${b.id}" aria-label="Eliminar fila">${IC.trash}</button></td>
-        </tr>`).join("")}</tbody>
-        <tfoot><tr><td>Total</td><td></td><td class="r">${fmtMoney(totPres)}</td><td class="r">${fmtMoney(totInv)}</td><td></td></tr></tfoot>
-      </table>` : `<div class="empty">${IC.block}<p>Sin registros de bloqueo este mes.</p><button class="btn btn-primary" id="addBlk2">${IC.plus} Añadir el primero</button></div>`}
-    </div>
-  </div>`;
-
-  el("addBlk")?.addEventListener("click", addBloqueo);
-  el("addBlk2")?.addEventListener("click", addBloqueo);
-}
-
-/* ============================================================
    Vista: Ajustes
    ============================================================ */
 function renderAjustes(){
@@ -1032,10 +1065,6 @@ function addProduct(kind){
   monthData()[kind].push({id:uid(), name:"", days:{}, _open:true});
   save(); renderProducts(kind);
 }
-function addBloqueo(){
-  monthData().bloqueos.push({id:uid(), plataforma:"", presupuesto:0, inversion:0, nota:""});
-  save(); renderBloqueos();
-}
 function addCurrency(){
   let code = "MON"; let i=1;
   while(state.currencies[code]) code = "MON"+(i++);
@@ -1046,7 +1075,6 @@ function clearExamples(){
   const m = monthData();
   m.despacho = m.despacho.filter(p=>!p.example);
   m.testeos = m.testeos.filter(p=>!p.example);
-  m.bloqueos = m.bloqueos.filter(b=>!b.example);
   save(); render();
 }
 function resetMonth(){
@@ -1109,14 +1137,6 @@ view.addEventListener("input", e=>{
     const p = monthData()[prod.dataset.kind].find(x=>x.id===prod.dataset.id);
     if(p){ p.name = t.value; delete p.example; save(); }
   }
-  else if(t.dataset.bf){
-    const b = monthData().bloqueos.find(x=>x.id===t.dataset.id); if(!b) return;
-    const f = t.dataset.bf;
-    b[f] = (f==="presupuesto"||f==="inversion") ? parseInput(t.value) : t.value;
-    delete b.example;
-    if(f==="presupuesto"||f==="inversion") updateBloqueoTotals();
-    save();
-  }
   else if(t.dataset.cf){
     const c = state.currencies[t.dataset.code]; if(!c) return;
     const f = t.dataset.cf;
@@ -1154,28 +1174,14 @@ function updateSheetRow(p, day, prodEl){
     }
   }
 }
-function updateBloqueoTotals(){
-  const list = monthData().bloqueos;
-  const totPres = list.reduce((s,b)=>s+(+b.presupuesto||0),0);
-  const totInv = list.reduce((s,b)=>s+(+b.inversion||0),0);
-  const tf = view.querySelector("table.simple tfoot");
-  if(tf){ const tds=tf.querySelectorAll("td"); tds[2].textContent=fmtMoney(totPres); tds[3].textContent=fmtMoney(totInv); }
-}
 
-// Clicks (eliminar producto/fila, guardar estado abierto)
+// Clicks (eliminar producto, guardar estado abierto)
 view.addEventListener("click", e=>{
   const del = e.target.closest("[data-act='delProd']");
   if(del){
     const p = monthData()[del.dataset.kind];
     const i = p.findIndex(x=>x.id===del.dataset.id);
     if(i>=0){ p.splice(i,1); save(); renderProducts(del.dataset.kind); }
-    return;
-  }
-  const delBlk = e.target.closest("[data-delblk]");
-  if(delBlk){
-    const list = monthData().bloqueos;
-    const i = list.findIndex(x=>x.id===delBlk.dataset.delblk);
-    if(i>=0){ list.splice(i,1); save(); renderBloqueos(); }
   }
 });
 // Guardar estado abierto/cerrado de cada producto
@@ -1187,19 +1193,37 @@ view.addEventListener("toggle", e=>{
   }
 }, true);
 
-/* ---------- Tooltip del chart ---------- */
+/* ---------- Tooltip (chart diario + donas) ---------- */
 const tt = el("tt");
 view.addEventListener("mouseover", e=>{
-  const pt = e.target.closest(".pt"); if(!pt) return;
-  const day = pt.dataset.day, pct = pt.dataset.pct.replace(".",",");
-  const spend = fmtMoney(+pt.dataset.spend), fac = fmtMoney(+pt.dataset.fac);
-  tt.innerHTML = `<b>Día ${day}</b> · ${pct}%<br>${spend} / ${fac}`;
-  tt.style.opacity = "1";
+  const pt = e.target.closest(".pt");
+  if(pt){
+    const day = pt.dataset.day, pct = pt.dataset.pct.replace(".",",");
+    const spend = fmtMoney(+pt.dataset.spend), fac = fmtMoney(+pt.dataset.fac);
+    tt.innerHTML = `<b>Día ${day}</b> · ${pct}%<br>${spend} / ${fac}`;
+    tt.style.opacity = "1"; return;
+  }
+  const sl = e.target.closest(".slice");
+  if(sl){
+    tt.innerHTML = `<b>${sl.dataset.label}</b><br>${fmtMoney(+sl.dataset.val)} · ${sl.dataset.pct.replace(".",",")}%`;
+    tt.style.opacity = "1";
+    highlightLegend(sl.closest(".donut-wrap"), sl.dataset.label, true);
+  }
 });
 view.addEventListener("mousemove", e=>{
   if(tt.style.opacity==="1"){ tt.style.left = e.clientX+"px"; tt.style.top = e.clientY+"px"; }
 });
-view.addEventListener("mouseout", e=>{ if(e.target.closest(".pt")) tt.style.opacity="0"; });
+view.addEventListener("mouseout", e=>{
+  if(e.target.closest(".pt")) tt.style.opacity="0";
+  const sl = e.target.closest(".slice");
+  if(sl){ tt.style.opacity="0"; highlightLegend(sl.closest(".donut-wrap"), sl.dataset.label, false); }
+});
+function highlightLegend(wrap, label, on){
+  if(!wrap) return;
+  wrap.querySelectorAll(".dn-row").forEach(r=>{
+    r.classList.toggle("hot", on && r.dataset.label===label);
+  });
+}
 
 /* ============================================================
    Controles globales
@@ -1229,7 +1253,7 @@ el("themeBtn").addEventListener("click", ()=>{
   const order = ["system","light","dark"];
   const cur = order.indexOf(state.theme);
   state.theme = order[(cur+1)%order.length];
-  applyTheme(); save();
+  applyTheme(); save(); render();
 });
 
 /* ---------- Init ---------- */
